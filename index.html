@@ -20,10 +20,14 @@
 			import { OrbitControls } from './js/OrbitControls.js';
 			import { TransformControls } from './js/TransformControls.js';
    import { DragControls } from './js/DragControls.js';
+   import { Line2 } from './js/lines/Line2.js';
+   import { LineSegments2 } from './js/lines/LineSegments2.js';
+			import { LineMaterial } from './js/lines/LineMaterial.js';
+			import { LineGeometry } from './js/lines/LineGeometry.js';
 
 			let container, stats;
 			let camera, scene, renderer;
-   let line;
+   let traj, accel;
    let I;
 			const splineHelperObjects = [];
 			let splinePointsLength = 3;
@@ -35,7 +39,7 @@
 			const onUpPosition = new THREE.Vector2();
 			const onDownPosition = new THREE.Vector2();
 
-			const geometry = new THREE.BoxGeometry( 20, 20, 20 );
+			const geometry = new THREE.SphereGeometry( 10, 10, 10 );
 			let transformControl, dragControl;
 
 			const ARC_SEGMENTS = 200;
@@ -46,7 +50,8 @@
 
 			const params = {
 				tension: 0.5,
-				spline: true,
+				spline: false,
+    simulate: simulate,
 				addPoint: addPoint,
 				removePoint: removePoint,
 				exportSpline: exportSpline,
@@ -61,6 +66,7 @@
 
 				scene = new THREE.Scene();
 				scene.background = new THREE.Color( 0xf0f0f0 );
+				//scene.background = new THREE.Color( 0x001500 );
 
 				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 10000 );
 				camera.position.set( 0, 250, 1000 );
@@ -110,6 +116,7 @@
 				} );
 				gui.add( params, 'spline' );
 				gui.add( params, 'addPoint' );
+				gui.add( params, 'simulate' );
 				gui.add( params, 'removePoint' );
 				gui.add( params, 'exportSpline' );
     gui.add( params, 'serverUrl' );
@@ -180,23 +187,28 @@
 					scene.add( spline.mesh );
 				}
 
-    // geometry
-    const geometry2 = new THREE.BufferGeometry();
-
-    // attributes
-    const positions2 = new Float32Array( MAX_POINTS * 3 ); // 3 vertices per point
-    geometry2.addAttribute( 'position', new THREE.BufferAttribute( positions2, 3 ) );
-
-    // drawcalls
     let drawCount = 50; // draw the first 2 points, only
-    geometry2.setDrawRange( 0, drawCount );
+    // geometry
+    const traj_geometry = new THREE.BufferGeometry();
+    const traj_pos = new Float32Array( MAX_POINTS * 3 ); // 3 vertices per point
+    const traj_material = new THREE.LineBasicMaterial( { color: 0x000000, 
+          linewidth:5 } );
+    traj_geometry.setAttribute( 'position', new THREE.BufferAttribute( traj_pos, 3 ) );
+    //traj_pos.push(10,10,10);
+    //traj_pos.push(100,10,10);
+    //traj_geometry.setPositions(traj_pos);
+    traj = new THREE.Line( traj_geometry,  traj_material );
+    traj.computeLineDistances();
+				traj.castShadow = true;
+    scene.add( traj );
 
-    // material
-    const material = new THREE.LineBasicMaterial( { color: 0xff0000 } );
-
-    // line
-    line = new THREE.Line( geometry2,  material );
-    scene.add( line );
+    const accel_geometry = new THREE.BufferGeometry();
+    const accel_pos = new Float32Array( MAX_POINTS * 3 * 2 ); // 3 vertices per point
+    const accel_material = new THREE.LineBasicMaterial( { color: 0x00ee00 } );
+    accel_geometry.setAttribute( 'position', new THREE.BufferAttribute( accel_pos, 3 ) );
+    accel_geometry.setDrawRange( 0, drawCount );
+    accel = new THREE.LineSegments( accel_geometry,  accel_material );
+    scene.add( accel );
 
     // update positions
 				load( [ 
@@ -207,18 +219,19 @@
 
 
      function set_state(state){
-       console.log(state)
+        updateTrajectory(state)
+        updateAcceleration(state)
      }
-     I = { "ri": positions[0], "wp": positions[1], "rf": positions[2]}
 
-     connect(params.serverUrl, updatePositions)
+     I = { "ri": positions[0], "wp": positions[1], "rf": positions[2]}
+     connect(params.serverUrl, set_state)
 			}
 
 
     // update positions
-    function updatePositions(state) {
+    function updateTrajectory(state) {
 
-     const positions = line.geometry.attributes.position.array;
+     const positions = traj.geometry.attributes.position.array;
 
      let x, y, z, index;
      x = y = z = index = 0;
@@ -228,7 +241,26 @@
       positions[ index ++ ] = state.r[i][2];
       positions[ index ++ ] = state.r[i][1];
      }
-     line.geometry.setDrawRange(0, state.r.length)
+     traj.geometry.setDrawRange(0, state.r.length)
+
+    }
+
+    // update accel
+    function updateAcceleration(state) {
+     const positions = accel.geometry.attributes.position.array;
+
+     let x, y, z, index;
+     x = y = z = index = 0;
+
+     for ( let i = 0, l = state.r.length; i < l; i ++ ) {
+      positions[ index ++ ] = state.r[i][0];
+      positions[ index ++ ] = state.r[i][2];
+      positions[ index ++ ] = state.r[i][1];
+      positions[ index ++ ] = state.r[i][0]+state.a[i][0]*10;
+      positions[ index ++ ] = state.r[i][2]+state.a[i][2]*10;
+      positions[ index ++ ] = state.r[i][1]+state.a[i][1]*10;
+     }
+     accel.geometry.setDrawRange(0, state.r.length*2)
 
     }
 
@@ -272,6 +304,10 @@
 				splineHelperObjects.push( object );
 				return object;
 			}
+
+   function simulate() {
+
+   }
 
 			function addPoint() {
 				splinePointsLength ++;
@@ -335,7 +371,8 @@
 
 			function animate() {
 				requestAnimationFrame( animate );
-    line.geometry.attributes.position.needsUpdate = true; 
+    traj.geometry.attributes.position.needsUpdate = true; 
+    accel.geometry.attributes.position.needsUpdate = true; 
     
             
 				render();
