@@ -134,6 +134,7 @@ g["thrust_max"] = s <= P.a_max
 
 
 prob = cp.Problem(cp.Minimize(f), list(g.values()))
+
 def init():
     zeros = np.zeros((P.K,3))  
     state = dict(r=zeros, v=zeros, a=zeros, dtau=0.5)
@@ -147,6 +148,8 @@ def step(state):
             if tau.value != None else state['dtau']
     #stc.value = np.logical_and(r0[:,0].value <=.30, r0[:,0].value >=.25)*1.
     out = prob.solve(solver="ECOS", warm_start=True)
+    if prob.status in ["infeasible", "unbounded"]:
+        return init()[0]
     return dict(r=r.value, v=v.value, a=a.value, dtau=dtau.value)
 
 def update(inp):
