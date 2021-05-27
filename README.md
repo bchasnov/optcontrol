@@ -1,5 +1,5 @@
 # optcontrol
-
+![drone](https://github.com/bchasnov/optcontrol/blob/master/assets/screenshot.png)
 
 ## Instructions
 
